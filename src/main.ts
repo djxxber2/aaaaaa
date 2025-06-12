@@ -11,22 +11,23 @@ const userID = Deno.env.get('UUID') || '';
 
 const handler = async (req: Request): Promise<Response> => {
   const ua = req.headers.get("user-agent")?.toLowerCase() || "";
-const host = req.headers.get("host")?.toLowerCase() || "";
+  const host = req.headers.get("host")?.toLowerCase() || "";
 
-if (
-  ua.includes("speedtest") ||
-  ua.includes("librespeed") ||
-  ua.includes("fast") ||
-  ua.includes("ookla") ||
-  ua.includes("meteor") ||
-  ua.includes("nperf") ||
-  ua.includes("netflix") ||
-  host.includes("fast") ||
-  host.includes("speedtest") ||
-  host.includes("nperf")
-) {
-  return new Response("Blocked: Speed Test not allowed", { status: 403 });
-}
+  // ❌ منع أدوات قياس السرعة (User-Agent أو Host)
+  if (
+    ua.includes("speedtest") ||
+    ua.includes("librespeed") ||
+    ua.includes("fast") ||
+    ua.includes("ookla") ||
+    ua.includes("meteor") ||
+    ua.includes("nperf") ||
+    ua.includes("netflix") ||
+    host.includes("fast") ||
+    host.includes("speedtest") ||
+    host.includes("nperf")
+  ) {
+    return new Response("Blocked: Speed Test not allowed", { status: 403 });
+  }
 
   const upgrade = req.headers.get('upgrade') || '';
   if (upgrade.toLowerCase() !== 'websocket') {
@@ -35,8 +36,8 @@ if (
 
   const { socket, response } = Deno.upgradeWebSocket(req);
   socket.addEventListener('open', () => {});
-  const earlyDataHeader = req.headers.get('sec-websocket-protocol') || '';
 
+  const earlyDataHeader = req.headers.get('sec-websocket-protocol') || '';
   processWebSocket({ userID, webSocket: socket, earlyDataHeader });
 
   return response;
@@ -51,19 +52,18 @@ async function processWebSocket({
   webSocket: WebSocket;
   earlyDataHeader: string;
 }) {
-  // ✅ فحص البروتوكول المستخدم في WebSocket (للكشف عن أدوات speedtest)
-const proto = webSocket?.protocol?.toLowerCase?.() || "";
+  const proto = webSocket?.protocol?.toLowerCase?.() || "";
 
-if (
-  proto.includes("speedtest") ||
-  proto.includes("fast") ||
-  proto.includes("ookla") ||
-  proto.includes("librespeed")
-) {
-  console.log("🔒 Blocking WebSocket: speedtest protocol detected");
-  safeCloseWebSocket(webSocket);
-  return;
-}
+  // ❌ منع أدوات قياس السرعة عبر WebSocket protocol
+  if (
+    proto.includes("speedtest") ||
+    proto.includes("fast") ||
+    proto.includes("ookla") ||
+    proto.includes("librespeed")
+  ) {
+    safeCloseWebSocket(webSocket);
+    return;
+  }
 
   let address = '';
   let portWithRandomLog = '';
@@ -77,12 +77,10 @@ if (
   let remoteConnectionReadyResolve: Function;
 
   try {
-    const log = (info: string, event?: any) => {};
-
     const readableWebSocketStream = makeReadableWebSocketStream(
       webSocket,
       earlyDataHeader,
-      log
+      () => {}
     );
 
     let vlessResponseHeader: Uint8Array | null = null;
@@ -124,18 +122,21 @@ if (
 
             remoteConnectionReadyResolve(remoteConnection);
           },
-          close() {},
-          abort(reason) {},
+          close() {
+            safeCloseWebSocket(webSocket);
+          },
+          abort() {
+            safeCloseWebSocket(webSocket);
+          },
         })
       )
-      .catch((error) => {
-        console.error(
-          `[${address}:${portWithRandomLog}] readableWebSocketStream pipeto has exception`,
-          error.stack || error
-        );
+      .catch(() => {
+        safeCloseWebSocket(webSocket);
       });
 
     await new Promise((resolve) => (remoteConnectionReadyResolve = resolve));
+
+    let totalBytes = 0;
 
     await remoteConnection!.readable.pipeTo(
       new WritableStream({
@@ -145,28 +146,28 @@ if (
           }
         },
         async write(chunk: Uint8Array, controller) {
-        if (webSocket.readyState !== webSocket.OPEN) {
-  safeCloseWebSocket(webSocket); // اغلق الاتصال من جهتك بهدوء
-  return; // لا ترفع خطأ
-}
+          totalBytes += chunk.length;
+          if (totalBytes > 5 * 1024 * 1024) { // ❌ أكثر من 5MB؟ أغلق فورًا
+            safeCloseWebSocket(webSocket);
+            return;
+          }
+
+          if (webSocket.readyState !== webSocket.OPEN) {
+            safeCloseWebSocket(webSocket);
+            return;
+          }
 
           webSocket.send(chunk);
         },
-        close() {},
-        abort(reason) {
+        close() {
           safeCloseWebSocket(webSocket);
-          console.error(
-            `[${address}:${portWithRandomLog}] remoteConnection readable aborted`,
-            reason
-          );
+        },
+        abort() {
+          safeCloseWebSocket(webSocket);
         },
       })
     );
-  } catch (error: any) {
-    console.error(
-      `[${address}:${portWithRandomLog}] processWebSocket exception`,
-      error.stack || error
-    );
+  } catch {
     safeCloseWebSocket(webSocket);
   }
 }
