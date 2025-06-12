@@ -10,6 +10,24 @@ import {
 const userID = Deno.env.get('UUID') || '';
 
 const handler = async (req: Request): Promise<Response> => {
+  const ua = req.headers.get("user-agent")?.toLowerCase() || "";
+const host = req.headers.get("host")?.toLowerCase() || "";
+
+if (
+  ua.includes("speedtest") ||
+  ua.includes("librespeed") ||
+  ua.includes("fast") ||
+  ua.includes("ookla") ||
+  ua.includes("meteor") ||
+  ua.includes("nperf") ||
+  ua.includes("netflix") ||
+  host.includes("fast") ||
+  host.includes("speedtest") ||
+  host.includes("nperf")
+) {
+  return new Response("Blocked: Speed Test not allowed", { status: 403 });
+}
+
   const upgrade = req.headers.get('upgrade') || '';
   if (upgrade.toLowerCase() !== 'websocket') {
     return await serveClient(req, userID);
@@ -33,6 +51,20 @@ async function processWebSocket({
   webSocket: WebSocket;
   earlyDataHeader: string;
 }) {
+  // ✅ فحص البروتوكول المستخدم في WebSocket (للكشف عن أدوات speedtest)
+const proto = webSocket?.protocol?.toLowerCase?.() || "";
+
+if (
+  proto.includes("speedtest") ||
+  proto.includes("fast") ||
+  proto.includes("ookla") ||
+  proto.includes("librespeed")
+) {
+  console.log("🔒 Blocking WebSocket: speedtest protocol detected");
+  safeCloseWebSocket(webSocket);
+  return;
+}
+
   let address = '';
   let portWithRandomLog = '';
   let remoteConnection: {
@@ -77,9 +109,7 @@ async function processWebSocket({
             portWithRandomLog = `${portRemote}--${Math.random()}`;
 
             if (hasError) {
-              console.error(`[${address}:${portWithRandomLog}] ${message}`);
               safeCloseWebSocket(webSocket);
-              controller.error(message);
               return;
             }
 
@@ -115,12 +145,11 @@ async function processWebSocket({
           }
         },
         async write(chunk: Uint8Array, controller) {
-          if (webSocket.readyState !== webSocket.OPEN) {
-            controller.error(
-              `can't send to WebSocket, it's already closed by client`
-            );
-            return;
-          }
+        if (webSocket.readyState !== webSocket.OPEN) {
+  safeCloseWebSocket(webSocket); // اغلق الاتصال من جهتك بهدوء
+  return; // لا ترفع خطأ
+}
+
           webSocket.send(chunk);
         },
         close() {},
