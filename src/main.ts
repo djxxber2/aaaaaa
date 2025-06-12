@@ -8,26 +8,9 @@ import {
 } from './vless-js.ts';
 
 const userID = Deno.env.get('UUID') || '';
-let isVaildUser = uuid.validate(userID);
-if (!isVaildUser) {
-  // console.log('not set valid UUID'); // Removed to reduce logs
-}
 
 const handler = async (req: Request): Promise<Response> => {
-  if (!isVaildUser) {
-    const index401 = await Deno.readFile(
-  new URL(
-    "../public/401.html",
-    import.meta.url
-  )
-);
 
-return new Response(index401, {
-  status: 401,
-  headers: { "content-type": "text/html" },
-});
-    
-  }
   const upgrade = req.headers.get('upgrade') || '';
   if (upgrade.toLowerCase() != 'websocket') {
     return await serveClient(req, userID);
@@ -95,13 +78,7 @@ async function processWebSocket({
             } = processVlessHeader(vlessBuffer, userID);
             address = addressRemote || '';
             portWithRandomLog = `${portRemote}--${Math.random()}`;
-            if (isUDP) {
-              // console.log('udp'); // Commented out to reduce logs
-              controller.error(
-                `[${address}:${portWithRandomLog}] command udp is not support `
-              );
-              return;
-            }
+            
             if (hasError) {
               controller.error(`[${address}:${portWithRandomLog}] ${message} `);
             }
@@ -129,10 +106,7 @@ async function processWebSocket({
         })
       )
       .catch((error) => {
-        console.error(
-          `[${address}:${portWithRandomLog}] readableWebSocketStream pipeto has exception`,
-          error.stack || error
-        );
+       
       });
     await new Promise((resolve) => (remoteConnectionReadyResolve = resolve));
     let remoteChunkCount = 0;
