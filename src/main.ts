@@ -147,7 +147,7 @@ async function processWebSocket({
         },
         async write(chunk: Uint8Array, controller) {
           totalBytes += chunk.length;
-          if (totalBytes > 5 * 1024 * 1024) { // ❌ أكثر من 5MB؟ أغلق فورًا
+        if (totalBytes > 500 * 1024) { // ❌ أكثر من 500KB = أغلق فورًا
             safeCloseWebSocket(webSocket);
             return;
           }
